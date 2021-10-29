@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <stdbool.h>
 
 /* Misc manifest constants */
 #define MAXLINE    1024   /* max line size */
@@ -282,6 +283,49 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
+    struct job_t *jobp = NULL;
+
+    if (argv[1] == NULL) {
+       printf("%s, we should type in PID or %%jobid.\n", argv[0]);
+       return;
+    }
+
+    if (isdigit(argv[1][0])) {
+       pid_t pid = atoi(argv[1]);
+       jobp = getjobpid(jobs, pid);
+       if (jobp == NULL) {
+          printf("There is no such PID.\n");
+	  return;
+       }
+    }
+    else {
+       if (argv[1][0] == '%') {
+          int jid = atoi(&argv[1][1]);
+          jobp = getjobjid(jobs, jid);
+	  if (jobp == NULL) {
+             printf("There is no such JID.\n");
+             return;
+          }
+       }
+       else {
+          printf("Invalid input.\n");
+          return;
+       }
+    } 
+
+    if (!strcmp(argv[0], "bg")) {
+       pid_t pid = jobp->pid;
+       kill(-pid, SIGCONT);
+       jobp->state = BG;
+       printf("[%d] (%d) %s", jobp->jid, jobp->pid, jobp->cmdline);
+    }    
+    else {
+       pid_t pid = jobp->pid;
+       kill(-pid, SIGCONT);
+       jobp->state = FG;
+       waitfg(pid);
+    }
+
     return;
 }
 
@@ -290,6 +334,11 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
+    struct job_t *j = getjobpid(jobs, pid);
+    if(!j) return;
+    bool case1 = true, case2 = true;
+    
+    while (case1 && case2) sleep(1);
     return;
 }
 
@@ -306,6 +355,26 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
+    pid_t child_pid;
+    int status;
+
+    while((child_pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
+       if (WIFSTOPPED(status)) {
+          struct job_t *j = getjobpid(jobs, child_pid);
+          if (!j) {
+             return;
+          }
+          j->state = ST;
+          printf("Job [%d] (%d) stopped.\n", pid2jid(child_pid), child_pid);  
+       }
+       if (WIFSIGNALED(status)) {
+          deletejob(jobs, child_pid);
+          printf("Job [%d] (%d) deleted.\n", pid2jid(child_pid), child_pid);
+       }
+       if (WIFEXITED(status)) {
+          deletejob(jobs, child_pid);
+       }
+    }
     return;
 }
 
@@ -316,6 +385,11 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
+    pid_t pid;
+    pid = fgpid(jobs);
+    if (pid > 0) {
+       kill(-pid, SIGINT);
+    }
     return;
 }
 
@@ -326,6 +400,11 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    pid_t pid;
+    pid = fgpid(jobs);
+    if (pid > 0) {
+       kill(-pid, SIGTSTP);
+    }
     return;
 }
 
