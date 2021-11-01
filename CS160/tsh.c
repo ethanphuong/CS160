@@ -337,6 +337,20 @@ void waitfg(pid_t pid)
     struct job_t *j = getjobpid(jobs, pid);
     if(!j) return;
     bool case1 = true, case2 = true;
+
+    if (j -> pid != pid) {
+       case1 = false;
+    }
+    else {
+       case1 = true;
+    }
+   
+    if (j -> state != FG) {
+       case2 = false;
+    }
+    else {
+       case2 = true;
+    }
     
     while (case1 && case2) sleep(1);
     return;
